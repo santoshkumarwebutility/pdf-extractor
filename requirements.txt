@@ -1,3 +1,4 @@
 flask
-pymupdf
+flask-cors
 gunicorn
+pymupdf>=1.23.0
