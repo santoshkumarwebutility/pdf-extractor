@@ -1,13 +1,15 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import fitz
 import os
 import uuid
 
 app = Flask(__name__)
+CORS(app)  # 🔥 Important for CORS
 
 @app.route("/")
 def home():
-    return "PDF Table Extract API Running"
+    return "PDF Extract API Running"
 
 
 @app.route("/extract", methods=["POST"])
@@ -26,9 +28,8 @@ def extract_pdf():
         doc = fitz.open(filename)
 
         for page in doc:
-
             words = page.get_text("words")
-            words.sort(key=lambda w: (w[1], w[0]))  # sort by y then x
+            words.sort(key=lambda w: (w[1], w[0]))
 
             rows = {}
 
