@@ -1,16 +1,13 @@
 import os
-import fitz  # PyMuPDF
+import uuid
+import fitz
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return jsonify({
-        "status": "running",
-        "message": "PDF Table Extractor API",
-        "endpoint": "/extract (POST)"
-    })
+    return "PDF Table Extract API Running"
 
 
 @app.route("/extract", methods=["POST"])
@@ -24,43 +21,52 @@ def extract_pdf():
     if file.filename == "":
         return jsonify({"error": "Empty filename"}), 400
 
-    filepath = "temp.pdf"
-    file.save(filepath)
+    # unique temp file
+    filename = f"{uuid.uuid4()}.pdf"
+    file.save(filename)
 
     try:
-        doc = fitz.open(filepath)
-        all_tables = []
+        doc = fitz.open(filename)
+        table_results = []
 
         for page_number, page in enumerate(doc, start=1):
 
             tables = page.find_tables()
 
+            # Skip page if no tables
+            if not tables:
+                continue
+
             for table in tables:
                 data = table.extract()
 
-                if len(data) > 1:
-                    headers = data[0]
-                    rows = data[1:]
+                if not data or len(data) < 2:
+                    continue
 
-                    for row in rows:
-                        row_dict = {"page": page_number}
+                headers = data[0]
+                rows = data[1:]
 
-                        for i in range(len(headers)):
-                            header = headers[i] if headers[i] else f"column_{i}"
-                            value = row[i] if i < len(row) else ""
+                for row in rows:
+                    row_data = {
+                        "page": page_number
+                    }
 
-                            row_dict[header.strip()] = (
-                                value.strip() if value else ""
-                            )
+                    for i in range(len(headers)):
+                        header = headers[i] if headers[i] else f"column_{i}"
+                        value = row[i] if i < len(row) else ""
 
-                        all_tables.append(row_dict)
+                        row_data[header.strip()] = (
+                            value.strip() if value else ""
+                        )
+
+                    table_results.append(row_data)
 
         doc.close()
-        os.remove(filepath)
+        os.remove(filename)
 
         return jsonify({
-            "total_rows": len(all_tables),
-            "data": all_tables
+            "total_rows": len(table_results),
+            "tables": table_results
         })
 
     except Exception as e:
