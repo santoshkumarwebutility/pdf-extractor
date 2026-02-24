@@ -1,54 +1,66 @@
+from flask import Flask, request, jsonify
+import fitz
 import os
 import uuid
-import fitz
-from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "PDF Property-Value Extract API Running"
+    return "PDF Table Extract API Running"
 
 
 @app.route("/extract", methods=["POST"])
 def extract_pdf():
 
     if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+        return jsonify([])
 
     file = request.files["file"]
-
     filename = f"{uuid.uuid4()}.pdf"
     file.save(filename)
 
+    results = []
+
     try:
         doc = fitz.open(filename)
-        property_value_data = {}
 
         for page in doc:
-            tables = page.find_tables()
 
-            for table in tables:
-                data = table.extract()
+            words = page.get_text("words")
+            words.sort(key=lambda w: (w[1], w[0]))  # sort by y then x
 
-                for row in data:
-                    if len(row) >= 2:
-                        key = row[0].strip() if row[0] else ""
-                        value = row[1].strip() if row[1] else ""
+            rows = {}
 
-                        # Skip unwanted rows
-                        if key.lower() in ["property", "result", ""]:
-                            continue
+            for w in words:
+                y = round(w[1], 0)
+                text = w[4]
 
-                        property_value_data[key] = value
+                if y not in rows:
+                    rows[y] = []
+
+                rows[y].append((w[0], text))
+
+            for y in rows:
+                line = sorted(rows[y], key=lambda x: x[0])
+                texts = [t[1] for t in line]
+
+                if len(texts) >= 2:
+                    property_text = texts[0]
+                    value_text = " ".join(texts[1:])
+
+                    results.append({
+                        "property": property_text.strip(),
+                        "value": value_text.strip()
+                    })
 
         doc.close()
         os.remove(filename)
 
-        return jsonify(property_value_data)
+        return jsonify(results)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify([])
 
 
 if __name__ == "__main__":
