@@ -1,12 +1,17 @@
-from flask import Flask, request, jsonify
-import fitz  # PyMuPDF
 import os
+import fitz  # PyMuPDF
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "PDF Extract API Running"
+    return jsonify({
+        "status": "running",
+        "message": "PDF Table Extractor API",
+        "endpoint": "/extract (POST)"
+    })
+
 
 @app.route("/extract", methods=["POST"])
 def extract_pdf():
@@ -16,29 +21,51 @@ def extract_pdf():
 
     file = request.files["file"]
 
+    if file.filename == "":
+        return jsonify({"error": "Empty filename"}), 400
+
     filepath = "temp.pdf"
     file.save(filepath)
 
     try:
         doc = fitz.open(filepath)
-        results = []
+        all_tables = []
 
-        for page in doc:
-            blocks = page.get_text("blocks")
+        for page_number, page in enumerate(doc, start=1):
 
-            for block in blocks:
-                text = block[4].strip()
-                if text:
-                    results.append(text)
+            tables = page.find_tables()
+
+            for table in tables:
+                data = table.extract()
+
+                if len(data) > 1:
+                    headers = data[0]
+                    rows = data[1:]
+
+                    for row in rows:
+                        row_dict = {"page": page_number}
+
+                        for i in range(len(headers)):
+                            header = headers[i] if headers[i] else f"column_{i}"
+                            value = row[i] if i < len(row) else ""
+
+                            row_dict[header.strip()] = (
+                                value.strip() if value else ""
+                            )
+
+                        all_tables.append(row_dict)
 
         doc.close()
         os.remove(filepath)
 
-        return jsonify(results)
+        return jsonify({
+            "total_rows": len(all_tables),
+            "data": all_tables
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=10000)
