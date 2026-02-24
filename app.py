@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "PDF Table Extract API Running"
+    return "PDF Property-Value Extract API Running"
 
 
 @app.route("/extract", methods=["POST"])
@@ -18,56 +18,34 @@ def extract_pdf():
 
     file = request.files["file"]
 
-    if file.filename == "":
-        return jsonify({"error": "Empty filename"}), 400
-
-    # unique temp file
     filename = f"{uuid.uuid4()}.pdf"
     file.save(filename)
 
     try:
         doc = fitz.open(filename)
-        table_results = []
+        property_value_data = {}
 
-        for page_number, page in enumerate(doc, start=1):
-
+        for page in doc:
             tables = page.find_tables()
-
-            # Skip page if no tables
-            if not tables:
-                continue
 
             for table in tables:
                 data = table.extract()
 
-                if not data or len(data) < 2:
-                    continue
+                for row in data:
+                    if len(row) >= 2:
+                        key = row[0].strip() if row[0] else ""
+                        value = row[1].strip() if row[1] else ""
 
-                headers = data[0]
-                rows = data[1:]
+                        # Skip unwanted rows
+                        if key.lower() in ["property", "result", ""]:
+                            continue
 
-                for row in rows:
-                    row_data = {
-                        "page": page_number
-                    }
-
-                    for i in range(len(headers)):
-                        header = headers[i] if headers[i] else f"column_{i}"
-                        value = row[i] if i < len(row) else ""
-
-                        row_data[header.strip()] = (
-                            value.strip() if value else ""
-                        )
-
-                    table_results.append(row_data)
+                        property_value_data[key] = value
 
         doc.close()
         os.remove(filename)
 
-        return jsonify({
-            "total_rows": len(table_results),
-            "tables": table_results
-        })
+        return jsonify(property_value_data)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
