@@ -1,4 +1,3 @@
-flask
-flask-cors
-gunicorn
-pymupdf>=1.23.0
+Flask==3.0.2
+pdfplumber==0.10.4
+gunicorn==21.2.0
