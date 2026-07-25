@@ -1,68 +1,46 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-import fitz
-import os
-import uuid
+import pdfplumber
 
 app = Flask(__name__)
-CORS(app)  # 🔥 Important for CORS
 
-@app.route("/")
-def home():
-    return "PDF Extract API Running"
-
-
-@app.route("/extract", methods=["POST"])
+@app.route('/extract', methods=['POST'])
 def extract_pdf():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
 
-    if "file" not in request.files:
-        return jsonify([])
-
-    file = request.files["file"]
-    filename = f"{uuid.uuid4()}.pdf"
-    file.save(filename)
-
-    results = []
+    file = request.files['file']
+    specs = {}
 
     try:
-        doc = fitz.open(filename)
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                # 1. Table structure fetch karein
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        # Row filteration (Kam se kam 2 columns mandatory)
+                        if row and len(row) >= 2 and row[0] and row[1]:
+                            key = str(row[0]).strip().replace('\n', ' ')
+                            val = str(row[1]).strip().replace('\n', ' ')
+                            if key and val and key.lower() != 'property':
+                                specs[key] = val
 
-        for page in doc:
-            words = page.get_text("words")
-            words.sort(key=lambda w: (w[1], w[0]))
+                # 2. Agar table nahi mili toh line-by-line fallback parsing
+                if not specs:
+                    text = page.extract_text()
+                    if text:
+                        for line in text.split('\n'):
+                            if ':' in line:
+                                parts = line.split(':', 1)
+                                k = parts[0].strip()
+                                v = parts[1].strip()
+                                if k and v:
+                                    specs[k] = v
 
-            rows = {}
-
-            for w in words:
-                y = round(w[1], 0)
-                text = w[4]
-
-                if y not in rows:
-                    rows[y] = []
-
-                rows[y].append((w[0], text))
-
-            for y in rows:
-                line = sorted(rows[y], key=lambda x: x[0])
-                texts = [t[1] for t in line]
-
-                if len(texts) >= 2:
-                    property_text = texts[0]
-                    value_text = " ".join(texts[1:])
-
-                    results.append({
-                        "property": property_text.strip(),
-                        "value": value_text.strip()
-                    })
-
-        doc.close()
-        os.remove(filename)
-
-        return jsonify(results)
+        return jsonify(specs)
 
     except Exception as e:
-        return jsonify([])
+        return jsonify({'error': str(e)}), 500
 
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
